@@ -35,8 +35,14 @@ See [use-cases/transit-secrets-engine](use-cases/transit-secrets-engine) for the
 ## EU Data Protection - Mount Filters
 Reference: [Mount Filters](https://www.vaultproject.io/guides/operations/mount-filter/)
 
+With the Transit Secrets Engine, the ERP application is able to delegate on-the-fly encryption to Vault, such that sensitive data stored in the database is encrypted prior to write transactions and decrypted after read transactions. However, for EU data, a key reserved for encryption and decryption is written to the European Performance-Replica cluster (see [use-cases/transit-secrets-engine/script-vault-eu.sh](use-cases/transit-secrets-engine/script-vault-eu.sh)). [Mount Filters](https://www.vaultproject.io/guides/operations/mount-filter/) can then be used to ensure that these keys do not get replicated to non-european clusters, thus ensuring that only the applications connected via Vault Agent to the European Vault cluster will be able to decrypt this data.
+
 ## Systems Access Management - SSH Secrets Engine
 Reference: [SSH Secrets Engine](https://www.vaultproject.io/docs/secrets/ssh/index.html)
+
+Prior to the Vault Enterprise implementation, ACME Corporation's infrastructure relied on static SSH passwords to manage access to machines. This makes access difficult to manage in case an employee leaves. Even with SSH key-pairs, the allowed public keys on machines need to be managed in case of access management changes. Many organizations end up using a single key-pair because of the overhead required to effectively manage access management via SSH key-pairs (read [Why We need Dynamic Secrets by Armon Dadgar](https://www.hashicorp.com/blog/why-we-need-dynamic-secrets/)).
+
+A binary that takes the role of a PAM module - [Vault SSH Helper](https://github.com/hashicorp/vault-ssh-helper) - can be used in tandem with Vault to manage access to servers by performing a challenge requesting a One-Time-Password created by Vault for the specific machine beforehand. The helper then reaches out to Vault to finalize the challenge, and will allow the authenticated entity on success. These OTP, like other Vault secrets, will eventually expire if they are unused. And as their name suggests, can only be used once, before the individual is required to return to Vault and generate a new OTP.
 
 ## Applying the Terraform configuration
 
