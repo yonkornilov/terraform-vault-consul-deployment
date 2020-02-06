@@ -82,8 +82,8 @@ module "vpc" {
   cidr = "10.${var.subnet_second_octet}.0.0/16"
 
   azs             = data.aws_availability_zones.available.names
-  private_subnets = ["10.${var.subnet_second_octet}.1.0/24", "10.${var.subnet_second_octet}.2.0/24", "10.${var.subnet_second_octet}.3.0/24"]
-  public_subnets  = ["10.${var.subnet_second_octet}.101.0/24", "10.${var.subnet_second_octet}.102.0/24", "10.${var.subnet_second_octet}.103.0/24"]
+  private_subnets = length(data.aws_availability_zones.available.names) > 2 ? ["10.${var.subnet_second_octet}.1.0/24", "10.${var.subnet_second_octet}.2.0/24", "10.${var.subnet_second_octet}.3.0/24"] : ["10.${var.subnet_second_octet}.1.0/24", "10.${var.subnet_second_octet}.2.0/24"]
+  public_subnets  = length(data.aws_availability_zones.available.names) > 2 ? ["10.${var.subnet_second_octet}.101.0/24", "10.${var.subnet_second_octet}.102.0/24", "10.${var.subnet_second_octet}.103.0/24"] : ["10.${var.subnet_second_octet}.101.0/24", "10.${var.subnet_second_octet}.102.0/24"]
 
   enable_nat_gateway = true
   single_nat_gateway = true
@@ -292,7 +292,7 @@ data "aws_ami" "latest-image" {
 module "lambda" {
   source                = "github.com/chrismatteson/terraform-lambda"
   function_name         = "${random_id.project_name.hex}-consul-license"
-  source_files          = [{ content = "install_license.py", filename = "install_license.py" }]
+  source_files          = [{ content = "${path.module}/install_license.py", filename = "${path.module}/install_license.py" }]
   environment_variables = { "LICENSE" = var.consul_ent_license }
   handler               = "install_license.lambda_handler"
   subnet_ids            = module.vpc.public_subnets
@@ -538,11 +538,8 @@ module "vault" {
   desired_capacity  = var.vault_cluster_size
   instance_type     = "t2.small"
   target_group_arns = [aws_lb_target_group.vault.arn]
-  #  vpc_id                      = module.vpc.vpc_id
   vpc_zone_identifier = module.vpc.public_subnets
-  key_name            = var.ssh_key_name
-  #  allowed_inbound_cidr_blocks = ["0.0.0.0/0"]
-  #  allowed_ssh_cidr_blocks     = ["0.0.0.0/0"]
+  security_groups      = [aws_security_group.vault-sg.id, module.vpc.default_security_group_id]
   enabled_metrics      = ["GroupTotalInstances"]
   iam_instance_profile = aws_iam_instance_profile.instance_profile.name
   tags = [
@@ -556,11 +553,49 @@ module "vault" {
   user_data = module.compress_vault.userdata
 }
 
+resource "aws_security_group" "vault-sg" {
+  name    = "${random_id.project_name.hex}-vault-sg"
+  vpc_id  = module.vpc.vpc_id
+
+  ingress {
+    from_port       = 8200
+    to_port         = 8200
+    protocol        = "TCP"
+    security_groups = [aws_security_group.vault-lb-sg.id]
+  }
+
+  egress {
+    from_port       = 0
+    to_port         = 0
+    protocol        = "-1"
+    cidr_blocks     = ["0.0.0.0/0"]
+  }
+}
+
+resource "aws_security_group" "vault-lb-sg" {
+  name    = "${random_id.project_name.hex}-vault-lb-sg"
+  vpc_id  = module.vpc.vpc_id
+  ingress {
+    from_port       = 8200
+    to_port         = 8200
+    protocol        = "TCP"
+    cidr_blocks     = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port       = 0
+    to_port         = 0
+    protocol        = "-1"
+    cidr_blocks     = ["0.0.0.0/0"]
+  }
+}
+
 resource "aws_lb" "vault" {
   name               = "${random_id.project_name.hex}-vault-lb"
-  internal           = true
+  internal           = false
   load_balancer_type = "application"
   subnets            = module.vpc.public_subnets
+  security_groups    = [aws_security_group.vault-lb-sg.id]
 
   enable_deletion_protection = var.enable_deletion_protection
 
